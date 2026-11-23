@@ -39,29 +39,89 @@ Pinky Pro 팀 프로젝트의 낙상 감지 비전 파트이며, 현재는 **뼈
 - 웹캠 1대
 - 모델: `yolo11n-pose.pt` (처음 실행할 때 자동 다운로드)
 
-## 빌드
+## 실행 순서 (처음부터 끝까지)
+
+### 0. 준비 (한 번만)
 
 ```bash
+# 파이썬 패키지 설치 (이미 있으면 건너뜀)
+pip install ultralytics opencv-python numpy
+
+# 저장소 받기: ROS 작업공간의 src 안에 fall_detection 이라는 폴더 이름으로 받는다
 cd ~/ros2_ws/src
 git clone <이 저장소 주소> fall_detection
+```
+
+### 1. 빌드 (코드를 처음 받았거나 setup.py를 고쳤을 때)
+
+```bash
 cd ~/ros2_ws
 source /opt/ros/jazzy/setup.bash
 colcon build --packages-select fall_detection --symlink-install
-source install/setup.bash
 ```
 
-## 실행
+`--packages-select`는 이 패키지만 빌드한다는 뜻입니다 (작업공간 전체 빌드는 오래 걸림).
+`--symlink-install`을 쓰면 이후 `.py` 코드를 고쳐도 다시 빌드할 필요가 없습니다.
+
+### 2. 카메라 번호 확인
 
 ```bash
-# 터미널 1: 웹캠 (device는 /dev/videoN 의 N)
-ros2 run fall_detection camera_node --ros-args -p device:=0
-
-# 터미널 2: 낙상 노드 (show:=true 면 관절이 그려진 창, q 또는 ESC로 종료)
-ros2 run fall_detection fall_node --ros-args -p show:=true
-
-# 터미널 3: 결과 확인
-ros2 topic echo /fall_status
+ls /dev/video*
 ```
+
+`/dev/video0`이면 번호는 `0`입니다. 노트북 내장 카메라가 보통 0이고, 외부 USB 웹캠은 2 이상일 수 있습니다.
+같은 카메라가 번호 2개로 보일 수 있으니, 안 열리면 다음 번호를 시도하세요.
+
+### 3. 실행 (터미널 3개)
+
+**새 터미널을 열 때마다** 아래 두 줄을 먼저 실행해야 합니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/ros2_ws/install/setup.bash
+```
+
+| 순서 | 터미널 | 명령 | 하는 일 |
+|---|---|---|---|
+| 1 | 터미널 1 | `ros2 run fall_detection camera_node --ros-args -p device:=0` | 웹캠 영상을 `/camera/image_raw`로 발행 |
+| 2 | 터미널 2 | `ros2 run fall_detection fall_node --ros-args -p show:=true` | 관절 인식 + 상태 판정, 화면 표시 |
+| 3 | 터미널 3 | `ros2 topic echo /fall_status` | 상태가 흐르는 것을 확인 |
+
+- 터미널 1(카메라)을 **먼저** 켜고, 2~3초 뒤에 터미널 2를 켭니다.
+- 터미널 2를 처음 실행하면 `yolo11n-pose.pt`(약 6MB)를 자동 다운로드합니다. 인터넷 연결이 필요하고, 완료될 때까지 수십 초 걸릴 수 있습니다.
+- `device:=0`의 숫자는 2단계에서 확인한 번호로 바꿉니다.
+
+### 4. 동작 확인
+
+| 자세 | 화면의 상태 | 몸통 각도(angle) |
+|---|---|---|
+| 서 있기 | `NORMAL` | 0° 근처 |
+| 숙이기, 물건 줍기 | `NORMAL` | 30~50° |
+| 옆으로 눕기 | `SUSPECT` | 90° 근처 |
+| 화면에 사람 없음 | `NO_PERSON` | - |
+
+### 5. 종료
+
+- **fall_node**: 화면 창을 클릭한 뒤 `q` 또는 `ESC`, 또는 터미널에서 `Ctrl+C`
+- **camera_node**: 해당 터미널에서 `Ctrl+C`
+- 터미널을 못 찾겠을 때 한 번에 끄기:
+
+```bash
+pkill -INT -f "fall_detection/(camera_node|fall_node)"
+```
+
+### 문제가 생겼을 때
+
+| 증상 | 원인과 해결 |
+|---|---|
+| `Package 'fall_detection' not found` | 3단계의 `source` 두 줄을 실행하지 않았거나 빌드를 안 함 |
+| `카메라 N번을 열 수 없습니다` | 카메라 번호가 틀렸거나 다른 프로그램이 카메라를 사용 중. 2단계로 번호 다시 확인 |
+| 창이 안 뜸 | `-p show:=true`를 빼먹음. SSH 접속이면 화면 표시가 안 될 수 있음 |
+| `/fall_status`가 안 나옴 | 터미널 1(카메라)이 꺼져 있거나, 첫 실행 모델 다운로드가 아직 진행 중 |
+| 상태가 `NORMAL`과 `NO_PERSON`을 오감 | 알려진 한계 (연속 프레임 필터 없음) |
+| 느림 | `-p imgsz:=320`으로 입력 크기를 줄여 보기 |
+
+### 출력 형식
 
 `/fall_status` 출력 예:
 
