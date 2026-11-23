@@ -2,15 +2,22 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>fall_detection</name>
-  <version>0.0.0</version>
-  <description>YOLO-pose fall detection node</description>
+  <version>0.2.0</version>
+  <description>YOLO-pose based fall detection for Pinky Pro: STANDING posture, post-fall immobility alerts, terminal monitor</description>
   <maintainer email="song@example.com">song</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>rcl_interfaces</depend>
   <depend>cv_bridge</depend>
+
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <!-- ultralytics(YOLO)는 rosdep 키가 없어 pip로 설치: requirements.txt 참고 -->
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

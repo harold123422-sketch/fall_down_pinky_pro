@@ -1,0 +1,7 @@
+# pip로 설치하는 파이썬 패키지 (ROS 2 Jazzy, Ubuntu 24.04 기준)
+#   pip install -r requirements.txt
+ultralytics          # YOLO-pose
+numpy<2              # ROS Jazzy의 cv_bridge가 numpy 1.x 기준으로 빌드되어 있음
+pyyaml
+matplotlib           # tools/plot_features.py
+pytest               # tests/

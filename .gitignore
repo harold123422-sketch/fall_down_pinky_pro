@@ -19,3 +19,7 @@ log/
 *.avi
 runs/
 datasets/
+
+# tools 기본 출력 폴더
+out/
+out_run_video/

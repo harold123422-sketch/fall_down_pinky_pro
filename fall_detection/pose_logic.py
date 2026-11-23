@@ -6,7 +6,6 @@ ROS 없이도 import해서 시험할 수 있게 일부러 분리했다.
 import math
 from collections import deque
 
-import numpy as np
 
 # COCO 17 관절 번호 (YOLO-pose 출력 순서)
 L_SHOULDER, R_SHOULDER = 5, 6
