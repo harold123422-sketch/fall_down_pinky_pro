@@ -22,11 +22,15 @@ def test_10_fast_descent_is_fall_event(cfg):
     assert sim.last().fall_event_t_s == pytest.approx(sim.event_times("FALL_EVENT")[0])
 
 
+
 def test_11_slow_controlled_descent_is_not_fall_and_no_emergency(cfg):
     sim, _ = _fall(cfg, sp.side_lying(), 35, fall_s=4.0)        # 4초에 걸쳐 천천히 눕기
-    assert sim.event_times("FALL_EVENT") == []
-    assert sim.alerts() <= {"NONE"}                              # 이후 35초 정지해도 경보 없음
+    assert sim.event_times("FALL_EVENT") == []                   # 사양: 낙상 사건 아님
+    assert "EMERGENCY_POST_FALL_IMMOBILE" not in sim.alerts()    # 사양: 30초 정지해도 긴급 아님
     assert sim.last().mode.name == "NORMAL"
+    # 세부 자세 추가 후: 바닥에 누운 채 있으면 '주의'(보지 못한 낙상 가능)까지는 올라간다 (위험은 아님)
+    assert sim.alerts() <= {"NONE", "POSTURE_CAUTION", "CHECK_POSTURE_IMMOBILE"}
+    assert "TRANSITION:CONTROLLED_DESCENT" in [e for _, r in sim.log for e in r.events]
 
 
 def test_12_post_fall_side_lying_30s_is_emergency(cfg):

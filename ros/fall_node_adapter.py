@@ -23,9 +23,11 @@ from std_msgs.msg import String
 from ultralytics import YOLO
 
 from fall_core import FallCoreEngine, load_thresholds
+from fall_core.incident import IncidentManager
 from fall_core.iou_tracker import IoUTracker
 from fall_core.status import build_status
 from fall_core.viz import draw_tracks
+from fall_core.voice_out import VoiceOut
 from fall_core.yolo_io import build_detections, parse_result
 from fall_detection.camera_node import FrameReader
 
@@ -42,6 +44,11 @@ class FallCoreNode(Node):
         self.declare_parameter("camera_id", "cam0")
         self.declare_parameter("publish_keypoints", True)
         self.declare_parameter("stats_interval_s", 5.0)
+        # 응급 대응: 음성(핑키 스피커, 안 되면 PC 스피커), 관제·보호자 보고
+        # pinky / pc / both / off. ROS는 off 를 글자가 아니라 False 로 읽으므로 두 타입을 모두 받는다
+        self.declare_parameter("voice_target", "pinky", ParameterDescriptor(dynamic_typing=True))
+        self.declare_parameter("robot_say_url", "")         # 비우면 영상 주소에서 만듦 (…:8000/video -> …:8000/say)
+        self.declare_parameter("location", "")              # 비우면 thresholds.yaml 의 subject.location
         p = self.get_parameter
         self.source = p("source").value
         self.imgsz = p("imgsz").value
@@ -57,8 +64,37 @@ class FallCoreNode(Node):
         self.tracker = IoUTracker()
         self.model = YOLO(p("model").value)
         self.pub = self.create_publisher(String, "/fall_status", 10)
+        self.pub_report = self.create_publisher(String, "/fall_report", 10)        # 관제 시스템
+        self.pub_guardian = self.create_publisher(String, "/guardian_alert", 10)   # 보호자 알림
+        self.pub_voice = self.create_publisher(String, "/pinky_voice", 10)         # 핑키가 말한 문장 기록
+        say_url = p("robot_say_url").value
+        if not say_url and isinstance(self.source, str) and self.source.startswith("http"):
+            say_url = self.source.rsplit("/", 1)[0] + "/say"
+        self.incidents = IncidentManager(self.cfg, self.camera_id, p("location").value or None)
+        target = p("voice_target").value
+        if isinstance(target, bool):                          # -p voice_target:=off -> False
+            target = "pinky" if target else "off"
+        target = str(target).lower()
+        if target == "pinky" and not say_url:
+            target = "pc"                                     # 핑키 주소를 모르면 PC 스피커로
+        self.voice = VoiceOut(target, say_url, log=self.get_logger().info, style=self.cfg.get("voice_style"))
+        self.get_logger().info(f"음성 출력: {target}" + (f" ({say_url})" if target in ('pinky', 'both') else ""))
         self.reader = FrameReader(self.source, self.get_logger())
         self.get_logger().info(f"fall_core_node: source={self.source} -> /fall_status (q 또는 ESC로 종료)")
+
+    def _dispatch(self, act):
+        """대응 순서가 만든 할 일을 토픽과 스피커로 내보낸다."""
+        out = String()
+        out.data = json.dumps({"text": act.text, **act.data}, ensure_ascii=False)
+        if act.kind == "voice":
+            self.pub_voice.publish(out)
+            self.voice.say(act.text, key=act.data.get("key"))
+        elif act.kind == "control":
+            self.pub_report.publish(out)
+            self.get_logger().warning(f"[관제 보고] {act.text}")
+        elif act.kind == "guardian":
+            self.pub_guardian.publish(out)
+            self.get_logger().warning(f"[보호자 알림] {act.text}")
 
     def run(self):
         self.reader.start()
@@ -91,9 +127,12 @@ class FallCoreNode(Node):
             dets = build_detections(ids, boxes, confs, kpts)
             results = self.engine.update(tcap, dets)
 
+            for act in self.incidents.update(tcap, time.time(), results):     # 응급 대응 순서
+                self._dispatch(act)
             msg = String()
             msg.data = json.dumps(build_status(self.camera_id, self.get_clock().now().nanoseconds * 1e-9,
-                                               dets, results, self.cfg, self.publish_keypoints), ensure_ascii=False)
+                                               dets, results, self.cfg, self.publish_keypoints,
+                                               incidents=self.incidents.summaries(tcap)), ensure_ascii=False)
             self.pub.publish(msg)
             for r in results:
                 for e in r.events:

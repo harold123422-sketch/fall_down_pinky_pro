@@ -15,7 +15,7 @@ def _num(x, nd=3):
     return None if x is None or x != x else round(float(x), nd)
 
 
-def build_status(camera_id, stamp, dets, results, cfg, publish_keypoints=True):
+def build_status(camera_id, stamp, dets, results, cfg, publish_keypoints=True, incidents=None):
     tracks = []
     for d, r in zip(dets, results):
         f = r.features
@@ -31,6 +31,16 @@ def build_status(camera_id, stamp, dets, results, cfg, publish_keypoints=True):
             "descent_speed": _num(r.descent_speed, 2),
             "pelvis_height": _num(r.pelvis_y_norm, 2),           # 바닥 위 높이 (몸통길이 단위)
             "box_conf": round(float(d["box_conf"]), 3),
+            # 세부 자세 (posture_framework)
+            "posture_class": r.posture_class, "posture_family": r.posture_family, "posture_ko": r.posture_ko,
+            "posture_certainty": r.posture_certainty, "posture_reason": r.posture_reason,
+            "posture_note": r.posture_note, "posture_held_s": round(float(r.posture_held_s), 1),
+            "recovery_stage": r.recovery_stage, "floor_source": r.floor_source,
+            "pelvis_speed": _num(r.pelvis_speed, 2),
+            "events": list(r.events),                              # 이 프레임에 생긴 변화 (자세 전이, 경보 등)
+            # 낙상 보고서용 (낙상 후에만 값이 있음)
+            "fall_type": r.fall_type, "fall": r.fall_metrics,
+            "pre_fall_posture": r.pre_fall_posture, "landing_posture": r.landing_posture,
         }
         if publish_keypoints:
             item["kpts"] = [[round(float(v), 2) for v in kp] for kp in d["kpts"]]
@@ -51,4 +61,5 @@ def build_status(camera_id, stamp, dets, results, cfg, publish_keypoints=True):
                    "check_s": a["standing_immobile_check_s"],
                    "pelvis_floor_max": cfg["fall_event"]["pelvis_floor_max"]},
         "tracks": tracks,
+        "incidents": incidents or [],                          # 진행 중인 응급 대응 (IncidentManager.summaries)
     }

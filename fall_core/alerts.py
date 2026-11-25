@@ -1,6 +1,6 @@
 """낙상 사건(FALL_EVENT, 임시 규칙)과 경보 선택.
 
-FALL_EVENT 임시 규칙 (모두 만족, 숫자는 TBD이며 IMU(Sacrum S2) 데이터로 재결정):
+FALL_EVENT 임시 규칙 (모두 만족, 숫자는 임시값이며 IMU(Sacrum S2) 데이터로 확정 예정):
   F1. 직전 fall_prior_standing_s초 이내에 STANDING이었음
   F2. pelvis midpoint의 정규화 하강 속도 = delta(pelvis_y) / L_trunk_ref / delta_t >= descent_speed_min
       (이미지 y는 아래로 증가)
@@ -51,10 +51,22 @@ class FallEventDetector:
         return abs(pelvis_y - floor_y) / l_ref <= f["pelvis_floor_max"]      # F3
 
 
-def select_alert(mode, latched, moving_seen, check_active):
-    """한 track에 한 번에 가장 높은 경보 하나만 돌려준다."""
+def select_alert(mode, latched, moving_seen, check_active,
+                 self_recovering=False, posture_check=False, posture_caution=False):
+    """한 track에 한 번에 가장 높은 경보 하나만 돌려준다.
+
+    낙상 후(POST_FALL): 긴급(한 번 발령되면 회복 전까지 유지) > 스스로 일어나는 중(처음 자리 잡은 자세보다 회복 단계가 올라감)
+                        > 움직임 있음 > 낙상 직후
+    평상시           : 자세 무움직임 확인 > 주의 자세 > 기립 무움직임 확인 > 없음
+    """
     if mode == Mode.POST_FALL:
         if latched:
             return Alert.EMERGENCY_POST_FALL_IMMOBILE
+        if self_recovering:
+            return Alert.SELF_RECOVERABLE
         return Alert.POST_FALL_MOVING if moving_seen else Alert.FALL_EVENT
+    if posture_check:
+        return Alert.CHECK_POSTURE_IMMOBILE
+    if posture_caution:
+        return Alert.POSTURE_CAUTION
     return Alert.CHECK_STANDING_IMMOBILE if check_active else Alert.NONE

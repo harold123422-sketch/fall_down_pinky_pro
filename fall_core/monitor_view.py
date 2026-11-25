@@ -8,7 +8,10 @@
 """
 from collections import Counter
 
+from fall_core.posture_framework import KO, TRANSITION_KO
 from fall_core.risk import LEVEL_KO, Level
+
+_POST_FALL_ALERTS = ("FALL_EVENT", "EMERGENCY_POST_FALL_IMMOBILE", "POST_FALL_MOVING", "SELF_RECOVERABLE")
 
 JOINT_GROUPS = [
     ("머리  ", [("코", 0), ("왼눈", 1), ("오른눈", 2), ("왼귀", 3), ("오른귀", 4)]),
@@ -89,10 +92,13 @@ def describe(tr, msg):
     if posture == "STANDING":
         posture_t = "서 있는 자세"
     elif posture == "NOT_STANDING":
-        posture_t = "서 있지 않은 자세 (앉음·누움 등 세부 구분은 아직 하지 않음)"
+        posture_t = "서 있지 않은 자세"
     else:
         miss = missing_joints(tr, conf_min)
         posture_t = "자세를 판단할 수 없음 (필요한 관절이 안 보임" + (f": {', '.join(miss)})" if miss else ")")
+    ko = tr.get("posture_ko")
+    if ko and tr.get("posture_class") not in (None, "UNKNOWN"):
+        posture_t += f" — 세부 자세: {ko}" + (" (2D 추정)" if tr.get("posture_certainty") == "LOW" else "")
     move_t = {"MOVING": "움직이는 중", "IMMOBILE": f"가만히 있음 ({sec:.0f}초째)",
               "INDETERMINATE": "움직임 판단 중"}.get(tr.get("window"), "움직임 판단 중")
 
@@ -102,8 +108,15 @@ def describe(tr, msg):
         reason = f"낙상이 감지되었습니다. 움직임 여부를 확인하는 중입니다 ({sec:.0f}/{E:.0f}초)"
     elif alert == "POST_FALL_MOVING":
         reason = "낙상 후 움직임이 보입니다. 스스로 일어나는지 확인이 필요합니다"
+    elif alert == "SELF_RECOVERABLE":
+        reason = (f"낙상 후 스스로 일어나는 중입니다 (회복 {tr.get('recovery_stage')}/6단계: {ko}). "
+                  "계속 지켜보고 있습니다")
     elif alert == "CHECK_STANDING_IMMOBILE":
         reason = f"서 있는 채 {sec:.0f}초 동안 움직임이 없습니다 (기준 {C:.0f}초). 영상 확인을 요청합니다"
+    elif alert == "CHECK_POSTURE_IMMOBILE":
+        reason = f"[{ko}] 상태로 {sec:.0f}초 동안 움직임이 없습니다 ({tr.get('posture_note', '')}). 영상 확인을 요청합니다"
+    elif alert == "POSTURE_CAUTION":
+        reason = f"[{ko}] 상태가 {tr.get('posture_held_s', 0):.0f}초째 이어집니다 ({tr.get('posture_note', '')})"
     elif mode == "RECOVERED":
         reason = "낙상 후 회복했습니다 (다시 서 있음)"
     elif posture == "STANDING" and tr.get("window") == "IMMOBILE":
@@ -179,6 +192,10 @@ def render(msg, events, clock, color=True, stale_s=0.0):
         L.append(_paint(f"── 사람 #{tr['track_id']}  [{LEVEL_KO[Level[lvl]]}] ──", _TEXT[lvl], color))
         L.append(f"  동작 상태 : {d['posture']}, {d['movement']}")
         L.append(f"  판단 근거 : {d['reason']}")
+        if tr.get("posture_reason"):
+            L.append(f"  자세 근거 : {tr['posture_reason']}"
+                     + (f"  [{tr.get('posture_certainty')}: 2D에서 구분이 어려울 수 있음]"
+                        if tr.get("posture_certainty") == "LOW" else ""))
         L.append("  몸 상태   : " + " · ".join(d["body"]))
         L.append(f"  내부 상태 : 모드 {tr['mode']} / 경보 {tr['alert']} / 검출 신뢰도 {tr['box_conf']:.2f}")
         L.append("  관절 위치 (픽셀, 신뢰도가 낮은 관절은 '가려짐'):")
@@ -198,7 +215,8 @@ _POSTURE_KO = {"STANDING": "서 있음", "NOT_STANDING": "서 있지 않음", "U
 _ALERT_KO = {
     "NONE": "특이사항 없음", "CHECK_STANDING_IMMOBILE": "서서 정지(확인 요청)",
     "POST_FALL_MOVING": "낙상 후 움직임", "FALL_EVENT": "낙상 감지",
-    "EMERGENCY_POST_FALL_IMMOBILE": "낙상 후 정지(긴급)",
+    "EMERGENCY_POST_FALL_IMMOBILE": "낙상 후 정지(긴급)", "SELF_RECOVERABLE": "스스로 일어나는 중",
+    "POSTURE_CAUTION": "주의 자세", "CHECK_POSTURE_IMMOBILE": "자세 유지 무움직임(확인 요청)",
 }
 
 
@@ -245,9 +263,11 @@ class WindowSummary:
         for tr in msg.get("tracks", []):
             st = self.tracks.setdefault(tr["track_id"], {
                 "n": 0, "posture": Counter(), "window": Counter(), "max_still": 0.0,
-                "alerts": [], "last_alert": None, "level_max": "SAFE", "last": None})
+                "alerts": [], "last_alert": None, "level_max": "SAFE", "last": None, "detail": Counter()})
             st["n"] += 1
             st["posture"][tr["posture"]] += 1
+            if tr.get("posture_ko"):
+                st["detail"][tr["posture_ko"]] += 1
             st["window"][tr.get("window", "INDETERMINATE")] += 1
             st["max_still"] = max(st["max_still"], tr.get("immobile_elapsed_s", 0.0))
             st["last"] = tr
@@ -300,6 +320,9 @@ class WindowSummary:
             move += f" (정지가 최대 {st['max_still']:.0f}초 이어짐)"
         lines = [f"  ▸ 사람 #{tid}  (구간의 {shown:.0%} 동안 보임, 최고 단계 {LEVEL_KO[Level[st['level_max']]]})",
                  f"      자세   : {posture}", f"      움직임 : {move}"]
+        if st["detail"]:
+            top4 = st["detail"].most_common(4)
+            lines.insert(2, "      세부 자세: " + " / ".join(f"{k} {v / st['n']:.0%}" for k, v in top4))
         alerts = [f"{c} {_ALERT_KO.get(a, a)}" for c, a in st["alerts"] if a != "NONE"]
         if alerts:
             lines.append("      경보   : " + " → ".join(alerts))
@@ -396,9 +419,24 @@ class StatusNarrator:
     def update(self, msg, t, clock):
         """메시지 하나를 반영. 상태가 바뀌었으면 남길 멘트 줄을 돌려준다."""
         top = self.top_track(msg)
-        key = (top is not None, top["alert"] if top else None, top["mode"] if top else None)
+        lines = []
+        for tr in msg.get("tracks", []):               # 자세 전이는 흐린 글씨로 한 줄씩 기록
+            for e in tr.get("events", []):
+                if e.startswith("TRANSITION:") and e not in ("TRANSITION:FALL_DESCENT", "TRANSITION:RECOVERY_PATH"):
+                    tid = e.split(":", 1)[1]
+                    lines.append(self._c(f"{clock}  ↪ 사람 #{tr['track_id']}: {TRANSITION_KO.get(tid, tid)} "
+                                         f"(지금 {tr.get('posture_ko', '')})", _DIM))
+        extra = None
+        if top is not None and top["alert"] == "SELF_RECOVERABLE":
+            extra = top.get("recovery_stage")
+        elif top is not None and top["alert"] in ("POSTURE_CAUTION", "CHECK_POSTURE_IMMOBILE"):
+            extra = top.get("posture_class")
+        key = (top is not None, top["alert"] if top else None, top["mode"] if top else None, extra)
         if key == self.key:
-            return []
+            return lines
+        return lines + self._on_change(msg, t, clock, top, key)
+
+    def _on_change(self, msg, t, clock, top, key):
         prev_key, self.key, self.since = self.key, key, t
         prev_alert, self.prev_alert = self.prev_alert, (top["alert"] if top else None)
         limits = msg.get("limits", {})
@@ -408,7 +446,7 @@ class StatusNarrator:
         if top is None:
             if prev_key is None or not prev_key[0]:
                 return [self._c(f"{clock}  ○ 아직 사람이 보이지 않습니다. 지켜보고 있습니다...", _DIM)]
-            if prev_alert in ("FALL_EVENT", "EMERGENCY_POST_FALL_IMMOBILE", "POST_FALL_MOVING"):
+            if prev_alert in _POST_FALL_ALERTS:
                 return [self._c(f"{clock}  🚨 낙상 후 사람이 화면에서 사라졌습니다! 위치를 다시 확인하는 중입니다...",
                                 _RED_BOLD)]
             return [self._c(f"{clock}  ○ 사람이 화면에서 사라졌습니다. 다시 나타날 때까지 지켜봅니다.", _DIM)]
@@ -417,8 +455,14 @@ class StatusNarrator:
         alert, mode = top["alert"], top["mode"]
         body = " · ".join(describe(top, msg)["body"])
         if alert == "FALL_EVENT":
-            return [self._c(f"{clock}  🚨 낙상 위험 감지! {who}이(가) 빠르게 바닥으로 내려갔습니다. 상태를 파악 중입니다...",
-                            _RED_BOLD),
+            m = top.get("fall") or {}
+            if m:
+                pre = KO.get(top.get("pre_fall_posture"), "")
+                head = (f"{who}이(가) {pre} 상태에서 {m.get('duration_s', 0):.1f}초 만에 {m.get('shape_ko', '넘어짐')} "
+                        f"(골반 하강 약 {m.get('peak_speed_mps', 0):.1f} m/s)")
+            else:
+                head = f"{who}이(가) 빠르게 바닥으로 내려갔습니다"
+            return [self._c(f"{clock}  🚨 낙상 위험 감지! {head}. 상태를 파악 중입니다...", _RED_BOLD),
                     self._c(f"          몸 상태: {body}", _RED_BOLD)]
         if alert == "EMERGENCY_POST_FALL_IMMOBILE":
             return [self._c(f"{clock}  🚨🚨 긴급! {who}이(가) 낙상 후 {E:.0f}초 동안 움직이지 않습니다. 즉시 확인이 필요합니다!",
@@ -428,11 +472,22 @@ class StatusNarrator:
         if alert == "CHECK_STANDING_IMMOBILE":
             return [self._c(f"{clock}  ⚠ 주의: {who}이(가) 서 있는 채 {C:.0f}초 넘게 움직이지 않습니다. 상태를 살펴보고 있습니다...",
                             _YELLOW)]
+        ko, note = top.get("posture_ko", ""), top.get("posture_note", "")
+        if alert == "SELF_RECOVERABLE":
+            return [self._c(f"{clock}  ⚠ {who}이(가) 스스로 일어나는 중입니다: {ko} (회복 {top.get('recovery_stage')}/6단계). "
+                            "지켜보고 있습니다...", _YELLOW)]
+        if alert == "POSTURE_CAUTION":
+            return [self._c(f"{clock}  ⚠ 주의: {who}이(가) [{ko}]로 보입니다 — {note}. 상태를 살펴보고 있습니다...", _YELLOW)]
+        if alert == "CHECK_POSTURE_IMMOBILE":
+            return [self._c(f"{clock}  ⚠ 주의: {who}이(가) [{ko}] 상태로 {top.get('immobile_elapsed_s', 0):.0f}초 넘게 "
+                            "움직이지 않습니다. 확인이 필요합니다...", _YELLOW)]
         # 여기부터 경보 없음(NONE)
-        if mode == "RECOVERED" and prev_alert in ("FALL_EVENT", "EMERGENCY_POST_FALL_IMMOBILE", "POST_FALL_MOVING"):
+        if mode == "RECOVERED" and prev_alert in _POST_FALL_ALERTS:
             return [self._c(f"{clock}  ✅ 회복 확인: {who}이(가) 스스로 일어나 서 있습니다. 안정 상태로 돌아갑니다.", _GREEN)]
         if prev_alert == "CHECK_STANDING_IMMOBILE":
             return [self._c(f"{clock}  ✅ 다시 움직임이 확인되었습니다. 안정 상태로 돌아갑니다.", _GREEN)]
+        if prev_alert in ("POSTURE_CAUTION", "CHECK_POSTURE_IMMOBILE"):
+            return [self._c(f"{clock}  ✅ {who}이(가) [{ko}]로 바뀌었습니다. 안정 상태로 돌아갑니다.", _GREEN)]
         if prev_key is None or not prev_key[0]:
             return [self._c(f"{clock}  ● {who}을(를) 확인했습니다. 안정 상태입니다.", _GREEN)]
         return []
@@ -446,6 +501,9 @@ class StatusNarrator:
         if stale_s > 2.0:
             return self._c(f"📡 {stale_s:.0f}초째 신호가 없습니다. 연결을 확인하는 중{dots}", _YELLOW)
         dur = _fmt_dur(t - self.since) if self.since is not None else "0초"
+        inc = incident_status_line(msg.get("incidents", []), dots)
+        if inc:
+            return self._c(*inc)
         top = self.top_track(msg)
         n = len(msg.get("tracks", []))
         if top is None:
@@ -461,8 +519,60 @@ class StatusNarrator:
             return self._c(f"⚠ 낙상 후 움직임 관찰 중{dots} (일어나는지 확인 중, {dur})", _YELLOW)
         if alert == "CHECK_STANDING_IMMOBILE":
             return self._c(f"⚠ 서 있는 채 정지 {sec:.0f}초째 — 상태 확인 중{dots}", _YELLOW)
+        ko = top.get("posture_ko", "")
+        if alert == "SELF_RECOVERABLE":
+            return self._c(f"⚠ 스스로 일어나는 중{dots} ({ko}, 회복 {top.get('recovery_stage')}/6단계, {dur})", _YELLOW)
+        if alert == "POSTURE_CAUTION":
+            return self._c(f"⚠ 주의 자세 지속 중{dots} ({ko} · {top.get('posture_held_s', 0):.0f}초째)", _YELLOW)
+        if alert == "CHECK_POSTURE_IMMOBILE":
+            return self._c(f"⚠ [{ko}] 상태로 정지 {sec:.0f}초째 — 확인 중{dots}", _YELLOW)
         posture = {"STANDING": "서 있음", "NOT_STANDING": "서 있지 않음", "UNKNOWN": "자세 판단 보류"}[top["posture"]]
+        if ko and top.get("posture_class") not in (None, "UNKNOWN"):
+            posture += f" · {ko}"
         moving = {"MOVING": "움직이는 중", "IMMOBILE": f"정지 {sec:.0f}초째"}.get(top.get("window"), "확인 중")
         who = f"사람 {n}명" if n > 1 else f"사람 #{top['track_id']}"
         label = "회복 후 안정 상태 진행 중" if top["mode"] == "RECOVERED" else "안정 상태 진행 중"
         return self._c(f"● {label}{dots} ({who} · {posture} · {moving} · 안정 유지 {dur})", _GREEN)
+
+
+# ---------------------------------------------------------------------------------------------
+# 응급 대응 표시 (/pinky_voice, /fall_report, /guardian_alert)
+# ---------------------------------------------------------------------------------------------
+_CYAN = "\x1b[1;36m"
+_MAGENTA = "\x1b[1;35m"
+
+
+def incident_status_line(incidents, dots=""):
+    """진행 중인 응급 대응이 있으면 (문장, 색) 을 돌려준다. 우선순위: 보고 예고 > 질문 중 > 보고 완료."""
+    order = {"ANNOUNCED": 0, "ASKING": 1, "REPORTED": 2, "LOST": 3}
+    live = sorted([i for i in incidents if i.get("state") in order], key=lambda i: order[i["state"]])
+    if not live:
+        return None
+    i = live[0]
+    s, imm = i["state"], i.get("immobile_s", 0)
+    if s == "ANNOUNCED":
+        return (f"⏳ {i.get('countdown_s', 0):.0f}초 후 보호자·관제통신센터에 보고합니다{dots} (움직임 없음 {imm:.0f}초)",
+                _RED_BOLD)
+    if s == "ASKING":
+        return f"🔊 대답(움직임)을 기다리는 중{dots} ({i.get('wait_left_s', 0):.0f}초 남음, 움직임 없음 {imm:.0f}초)", _RED_BOLD
+    if s == "REPORTED":
+        return f"📡 보고 완료 — 도움을 기다리는 중{dots} (움직임 없음 {imm:.0f}초)", _EMERG
+    return f"❓ 낙상 후 사람이 화면에서 사라짐 — 위치 확인 필요{dots}", _RED_BOLD
+
+
+def format_voice(d, clock, color=True):
+    return _paint(f"{clock}  🔊 핑키: “{d.get('text', '')}”", _CYAN, color)
+
+
+def format_control(d, clock, color=True):
+    """관제 보고 한 건. 보고서 전문이면 두 줄."""
+    state = d.get("state", "")
+    code = {"REPORTED": _EMERG, "CLOSED": _GREEN, "RESPONDED": _YELLOW}.get(state, _RED_BOLD)
+    if d.get("full_report"):
+        return [_paint(f"{clock}  📡 관제 보고 [{d.get('state_ko', '')}] 119 전달용 보고서:", code, color),
+                _paint(f"          {d.get('report_text', d.get('text', ''))}", code, color)]
+    return [_paint(f"{clock}  📡 관제 보고 [{d.get('state_ko', '')}] {d.get('text', '')}", code, color)]
+
+
+def format_guardian(d, clock, color=True):
+    return _paint(f"{clock}  📱 보호자 알림: {d.get('text', '')}", _MAGENTA, color)

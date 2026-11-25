@@ -11,6 +11,9 @@ SKELETON = [(5, 6), (5, 7), (7, 9), (6, 8), (8, 10), (5, 11), (6, 12), (11, 12),
 ALERT_COLOR = {
     Alert.NONE: (0, 200, 0),
     Alert.CHECK_STANDING_IMMOBILE: (0, 220, 255),
+    Alert.POSTURE_CAUTION: (0, 220, 255),
+    Alert.CHECK_POSTURE_IMMOBILE: (0, 220, 255),
+    Alert.SELF_RECOVERABLE: (0, 200, 255),
     Alert.FALL_EVENT: (0, 140, 255),
     Alert.POST_FALL_MOVING: (0, 140, 255),
     Alert.EMERGENCY_POST_FALL_IMMOBILE: (0, 0, 255),
@@ -52,7 +55,10 @@ def draw_tracks(img, dets, results, conf_min, footer=None):
             x1, y1 = 10, 60
         y0 = max(18, y1 - 48)
         f = r.features
-        _text(img, f"ID{r.track_id} {r.posture.name} | {r.mode.name}", (x1, y0), color, 0.5)
+        stage = f" stage {r.recovery_stage}/6" if getattr(r, "recovery_stage", None) else ""
+        low = "?" if getattr(r, "posture_certainty", "HIGH") == "LOW" else ""      # ? = 2D에서 구분이 어려운 자세
+        _text(img, f"ID{r.track_id} {getattr(r, 'posture_class', r.posture.name)}{low} | {r.mode.name}{stage}",
+              (x1, y0), color, 0.5)
         _text(img, f"tilt {_f(f['trunk_tilt_deg'])}  knee L{_f(f['knee_angle_L'])}/R{_f(f['knee_angle_R'])}"
                    f"  still {r.immobile_elapsed_s:.1f}s", (x1, y0 + 16), (255, 255, 255), 0.45)
         if r.alert != Alert.NONE:

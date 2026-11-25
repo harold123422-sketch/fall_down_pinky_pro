@@ -29,7 +29,8 @@ from std_msgs.msg import String
 
 import shutil
 
-from fall_core.monitor_view import StatusNarrator, WindowSummary, escalations, events_from, fit_width, render
+from fall_core.monitor_view import (StatusNarrator, WindowSummary, escalations, events_from, fit_width,
+                                    format_control, format_guardian, format_voice, render)
 
 
 class FallMonitor(Node):
@@ -50,6 +51,12 @@ class FallMonitor(Node):
         self.prev_events, self.prev_rank, self.events = {}, {}, []
         self.summary = WindowSummary(self.summary_s)
         self.sub = self.create_subscription(String, "/fall_status", self.on_msg, 10)
+        # 응급 대응: 핑키 음성, 관제 보고, 보호자 알림
+        self.sub_voice = self.create_subscription(String, "/pinky_voice", lambda m: self.on_extra(m, format_voice), 10)
+        self.sub_report = self.create_subscription(String, "/fall_report",
+                                                   lambda m: self.on_extra(m, format_control), 10)
+        self.sub_guard = self.create_subscription(String, "/guardian_alert",
+                                                  lambda m: self.on_extra(m, format_guardian), 10)
         if self.mode == "live":
             self.timer = self.create_timer(p("interval_s").value, self.draw_live)
         elif self.mode == "status":
@@ -66,6 +73,22 @@ class FallMonitor(Node):
 
     def _now_text(self):  # (주의: Node 내부의 _clock 과 이름이 겹치면 안 됨)
         return time.strftime("%H:%M:%S")
+
+    def on_extra(self, m, fmt):
+        """음성·관제·보호자 메시지를 화면에 남긴다."""
+        try:
+            d = json.loads(m.data)
+        except json.JSONDecodeError:
+            return
+        lines = fmt(d, self._now_text(), color=not self.plain)
+        lines = lines if isinstance(lines, list) else [lines]
+        if self.mode == "status":
+            self.pending += lines
+        elif self.mode == "live":
+            self.events += lines
+        else:
+            for ln in lines:
+                print(ln, flush=True)
 
     def on_msg(self, m):
         try:

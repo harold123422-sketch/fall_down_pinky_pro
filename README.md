@@ -92,14 +92,36 @@ colcon build --packages-select fall_detection --symlink-install
 | `POST_FALL_MOVING` | 낙상 후 움직임 관찰 |
 | `CHECK_STANDING_IMMOBILE` | 기립 상태로 30초 무움직임 |
 | `RECOVERED` | 낙상 후 STANDING을 3초 이상 유지 |
+| `SELF_RECOVERABLE` | 낙상 후 처음 자리 잡은 자세보다 회복 단계가 올라감 (팔꿈치 지지 → 바닥 앉기 → 네발 → 무릎 서기) |
+| `POSTURE_CAUTION` | 평상시 주의 자세가 이어짐 (바닥에 누움 5초, 태아 자세 3초, 네발 3초, 의자에서 체간 처짐 10초 등) |
+| `CHECK_POSTURE_IMMOBILE` | 평상시 그 자세(바닥 앉기·누움 등)로 30초 무움직임 |
 
 | 위험 단계 | 경보 (`thresholds.yaml`의 `risk_levels`에서 변경) |
 |---|---|
 | 비위험 | 경보 없음, 회복 후 |
-| 주의 | 기립 30초 무움직임, 낙상 후 움직임 |
+| 주의 | 기립 30초 무움직임, 주의 자세, 자세 유지 무움직임, 낙상 후 스스로 일어나는 중, 낙상 후 움직임 |
 | 위험 | 낙상 직후, 낙상 후 30초 무움직임(긴급) |
 
+### 세부 자세 (29가지)
+
+`낙상 감지 자세 프레임워크`의 기립·앉기·무릎·네발·누운 계열을 관절 좌표(체간 기울기, 바닥 기준선 위 높이,
+바닥 근처 지지 분절)로 판정합니다. 판정 조건, **자세별로 어느 단계에서 위험을 감지하는지**, 회복 경로 6단계,
+자세 전이, 확인이 필요한 항목은 **`docs/POSTURE_FRAMEWORK.md`**에 정리했습니다.
+손바닥 지지는 카메라로 볼 수 없어 "wrist가 바닥 기준선 근처"로 근사합니다.
+
 시연에서 30초를 줄이려면 `post_fall_immobile_emergency_s`, `standing_immobile_check_s`만 바꾸면 됩니다.
+
+## 응급 대응과 보고 (음성 안내 → 관제·보호자)
+
+낙상 후 30초 무움직임이면 핑키가 🔊 **"응급상황으로 판단됩니다. 움직이실 수 있으십니까?"** 라고 묻고,
+10초 동안 반응이 없으면 🔊 **"10초 후 보호자 및 관제통신센터에 현재 상황을 보고하겠습니다."** 라고 안내한 뒤
+`/fall_report`(관제)와 `/guardian_alert`(보호자)로 **119 전달용 보고서**를 보냅니다.
+보고서에는 직전 자세, 낙상에 걸린 시간, 수직 낙하·옆으로 넘어짐·슬립다운, 골반 하강 속도(m/s), 착지 자세,
+무움직임 시간, 일어나려는 시도가 들어갑니다. 자세한 흐름·토픽·핑키 스피커 설정은 **`docs/EMERGENCY_RESPONSE.md`**.
+
+- 음성은 핑키 스피커(`pinky_stream.py`의 `/say`)로 보내고, 안 되면 PC 스피커로 대신 말합니다 (`-p voice_target:=pinky|pc|both|off`).
+- 목소리 종류·빠르기·높이는 `voice_style`에서, 내 목소리 녹음은 `python3 tools/voice_preview.py --record ask`로 바꿉니다.
+- 토픽까지만 만들었습니다. 보호자 휴대폰·관제 서버로 실제 전달하는 부분은 팀 관제 시스템에 맞춰 연결해야 합니다.
 
 ## 터미널 모니터
 
@@ -155,19 +177,22 @@ ros2 run fall_detection fall_monitor --ros-args -p plain:=true        # 파일 �
 ## 테스트
 
 ```bash
-python3 -m pytest tests -q       # ROS 없이 실행. 지시서의 16개 시나리오 포함 49개
+python3 -m pytest tests -q       # ROS 없이 실행. 지시서의 16개 시나리오 + 세부 자세 + 응급 대응 포함 146개
 ```
 
 가짜 17점 자세(`tests/synthetic_poses.py`)로 기립, 무릎 굽힘, 체간 굴곡, 옆으로 누움, 빠른/느린 하강,
 낙상 후 정지·움직임·회복, 추적 소실, 불규칙한 프레임 간격, 터미널 멘트를 시험합니다.
+세부 자세 23가지는 관절점 흔들기(±4.5px), 몸통 길이 오차(±10%), 좌우 반전에서도 같은 자세로 나오는지 확인합니다.
+**합성 자세는 규칙에 맞춰 만든 것이라 실제 사람의 정확도를 보증하지 않습니다.**
 
 ## 한계
 
 - **2D 영상입니다.** 정면에서는 hip/knee flexion이 투영으로 작게 보이고(정면에서 무릎을 20° 굽혀도 일직선처럼 보일 수 있음),
   측면에서는 반대편 다리가 가려질 수 있습니다. STANDING 판정 오차는 IMU로 정량화할 예정입니다.
 - COCO에는 patella, calcaneus, metatarsal head, palm, toe가 없습니다. knee를 patella, ankle을 calcaneus의 근사로 씁니다.
-- 판정은 STANDING 하나만 구현되어 있습니다. 앉음·무릎 꿇음·누움 같은 세부 자세는 아직 없어서,
-  **낙상 없이 누운 채 가만히 있는 경우는 `비위험`으로 남습니다.**
+- 세부 자세는 합성 자세로만 검증했습니다. 앙와위/복와위, 의자 앉기/90도 쪼그림처럼 2D에서 구분이 어려운 자세는
+  화면에 `?`, 터미널에 "(2D 추정)"으로 표시됩니다.
+- 평상시(낙상 장면을 못 본 경우)에는 바닥에 누워 있어도 **주의**까지만 올라가고 위험으로는 올라가지 않습니다 (확인 필요).
 - 추적기는 IoU와 중심 거리만 쓰는 간단한 방식이라, 여러 명이 걸치면 번호가 자주 바뀔 수 있습니다
   (ultralytics의 ByteTrack은 `lap` 설치가 필요해 쓰지 않음).
 - 화면의 `latency`는 PC가 프레임을 받은 뒤부터의 지연이며, 핑키→PC 전송 지연은 포함하지 않습니다.
@@ -184,13 +209,17 @@ python3 -m pytest tests -q       # ROS 없이 실행. 지시서의 16개 시나�
 6. 소실된 `POST_FALL` track은 같은 위치(`track_readopt_max_dist`)에 새 번호로 나타나면 이어 붙입니다.
 7. `pelvis_height`(`pelvis_y_norm`)는 `(floor_y - pelvis_y) / L_trunk_ref`: 서 있으면 다리 길이만큼(몸통의 2~3배), 누우면 약 0.
 8. 위험 단계 매핑에서 `FALL_EVENT`(낙상 직후)를 위험으로 두었습니다.
-9. 새 노드를 담은 파이썬 패키지 이름이 `ros`입니다. 너무 일반적인 이름이라 나중에 `fall_ros` 등으로 바꾸는 것을 권장합니다.
+9. "스스로 일어나는 중"은 낙상 후 처음 자리 잡은 자세보다 회복 단계가 올라갈 때만 표시합니다.
+10. 주의 자세끼리 바뀌면(바닥에 누움 → 태아 자세) 주의 시간을 이어서 셉니다.
+11. 자세별 위험 기준(`posture_risk`)은 제가 제안한 값이며 임상 확인이 필요합니다 (`docs/POSTURE_FRAMEWORK.md` 3절).
+12. 새 노드를 담은 파이썬 패키지 이름이 `ros`입니다. 너무 일반적인 이름이라 나중에 `fall_ros` 등으로 바꾸는 것을 권장합니다.
 
 ## 폴더 구조
 
 ```
 fall_core/        판정 코어 (순수 Python: numpy, PyYAML)
-  keypoints.py geometry.py states.py posture.py history.py immobility.py alerts.py engine.py
+  keypoints.py geometry.py states.py posture.py posture_framework.py history.py immobility.py alerts.py engine.py
+  fall_metrics.py incident.py voice_out.py   낙상 모양, 응급 대응 순서, 음성 출력
   iou_tracker.py yolo_io.py viz.py risk.py status.py monitor_view.py config.py
 ros/              fall_node_adapter.py (fall_core_node), fall_monitor.py
 fall_detection/   camera_node.py, fall_node.py + pose_logic.py (초기 뼈대)
@@ -198,7 +227,7 @@ robot/            pinky_stream.py (핑키에서 실행)
 config/           thresholds.yaml
 tools/            run_video.py, plot_features.py, demo_status_publisher.py
 tests/            pytest
-docs/             SPEC_standing.md
+docs/             SPEC_standing.md (기립 사양), POSTURE_FRAMEWORK.md (세부 자세·위험 단계), EMERGENCY_RESPONSE.md (응급 대응)
 ```
 
 ## 라이선스

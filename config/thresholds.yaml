@@ -1,41 +1,181 @@
-# 모든 각도: degree, 모든 길이: trunk length(L_trunk) 대비 비율, 시간: second
-# TBD = 데이터(영상, IMU)로 결정해야 하는 임시값. 코드에는 숫자를 하드코딩하지 않는다.
-keypoint_conf_min: 0.5            # TBD
+# 모든 각도: degree, 모든 길이: 몸통 길이(L_trunk_ref) 대비 비율, 시간: 초(second)
+# "임시값" = 지금은 가정으로 넣어 둔 값. 실제 영상·IMU 데이터를 본 뒤 이 파일에서 바꿈 (코드는 고치지 않음)
+# "[확인 필요]" = 숫자뿐 아니라 임상적 판단을 사용자가 정해야 하는 항목
+keypoint_conf_min: 0.5            # 임시값, 실제 데이터로 확정 예정: 관절점 신뢰도가 이보다 낮으면 '가려짐'
 
 standing:
-  knee_extension_min_deg: 160     # TBD: hip-knee-ankle 내각, 180 = full extension
-  hip_extension_min_deg: 160      # TBD: shoulder-hip-knee 내각, 180 = neutral
-  knee_hip_horizontal_max: 0.25   # TBD: |knee_x - hip_x| / L_trunk
-  trunk_tilt_max_deg: 20          # TBD: 수직선 대비 체간 경사
-  min_duration_s: 0.5             # TBD: 이 시간 이상 조건 유지 시 STANDING 확정 (깜빡임 방지)
-  reference_ema_alpha: 0.1        # [추가] TBD: L_trunk_ref, floor 기준선의 지수평균 계수 (클수록 빨리 갱신)
+  knee_extension_min_deg: 160     # 임시값, 실제 데이터로 확정 예정: hip-knee-ankle 내각 (180 = full extension)
+  hip_extension_min_deg: 160      # 임시값, 실제 데이터로 확정 예정: shoulder-hip-knee 내각 (180 = neutral)
+  knee_hip_horizontal_max: 0.25   # 임시값, 실제 데이터로 확정 예정: |knee_x - hip_x| / L_trunk (patella가 hip 직하방)
+  trunk_tilt_max_deg: 20          # 임시값, 실제 데이터로 확정 예정: 수직선 대비 체간 경사
+  min_duration_s: 0.5             # 임시값, 실제 데이터로 확정 예정: 이 시간 이상 조건 유지 시 STANDING 확정 (깜빡임 방지)
+  reference_ema_alpha: 0.1        # [추가] 임시값: L_trunk_ref, 바닥 기준선의 지수평균 계수 (클수록 빨리 갱신)
 
 immobility:
-  window_s: 2.0                   # TBD: 변위 계산 시간 창
-  displacement_max: 0.05          # TBD: postural sway보다 커야 함
+  window_s: 2.0                   # 임시값, 실제 데이터로 확정 예정: 변위 계산 시간 창
+  displacement_max: 0.05          # 임시값, 실제 데이터로 확정 예정: postural sway(몸통 길이의 수 %)보다 커야 함
   min_valid_keypoint_ratio: 0.5
   min_window_fill: 0.8            # [추가] 창에 데이터가 이 비율 미만이면 판정 보류 (영상 시작 직후)
 
 alerts:
   post_fall_immobile_emergency_s: 30.0  # 확정(임상 기준): 낙상 후 어떤 자세든 무움직임 -> 긴급
   standing_immobile_check_s: 30.0       # 확인 요청 기준 (긴급 아님)
-  recovery_standing_min_s: 3.0          # TBD: 이 시간 이상 STANDING 유지 시 회복
-  track_lost_hold_s: 10.0               # TBD: track 소실 시 POST_FALL 상태 유지 시간
-  gap_resume_s: 0.5                     # [추가] TBD: 이 시간 넘게 관측이 끊기면 끊긴 시간은 무움직임으로 세지 않음
-  post_fall_settle_s: 3.0               # [추가] TBD: 낙상 직후 몸이 자리잡는 시간. 이 동안의 움직임은 POST_FALL_MOVING으로 보지 않음
-  track_readopt_max_dist: 1.5           # [추가] TBD: 새 track_id를 소실된 POST_FALL track으로 이어 붙이는 최대 거리 (L_trunk 배수)
+  recovery_standing_min_s: 3.0          # 임시값 [확인 필요]: 이 시간 이상 STANDING 유지 시 회복 (바닥 앉기 도달로 할지 결정 필요)
+  track_lost_hold_s: 10.0               # 임시값 [확인 필요]: track 소실 시 POST_FALL 상태 유지 시간
+  gap_resume_s: 0.5                     # [추가] 임시값: 이 시간 넘게 관측이 끊기면 끊긴 시간은 무움직임으로 세지 않음
+  post_fall_settle_s: 3.0               # [추가] 임시값: 낙상 직후 몸이 자리잡는 시간. 이 동안의 움직임은 POST_FALL_MOVING으로 보지 않음
+  track_readopt_max_dist: 1.5           # [추가] 임시값: 새 track_id를 소실된 POST_FALL track으로 이어 붙이는 최대 거리 (L_trunk 배수)
 
-fall_event:                     # 임시 규칙, IMU 데이터로 재결정
-  fall_prior_standing_s: 2.0      # TBD
-  descent_speed_min: 1.5          # TBD: trunk length / s
-  fall_max_duration_s: 1.5        # TBD: 하강 시작~바닥 도달 최대 시간
-  pelvis_floor_max: 0.6           # TBD: |pelvis_y - floor_y| / L_trunk_ref
+fall_event:                     # 임시 규칙. 하강 속도는 IMU(Sacrum S2) 데이터로 확정 예정
+  fall_prior_standing_s: 2.0      # 임시값, 실제 데이터로 확정 예정: 직전 몇 초 안에 서 있었어야 하는지
+  descent_speed_min: 1.5          # 임시값, IMU로 확정 예정: 골반 하강 속도 (몸통 길이/초)
+  fall_max_duration_s: 1.5        # 임시값, 실제 데이터로 확정 예정: 하강 시작~바닥 도달 최대 시간
+  pelvis_floor_max: 0.6           # 임시값, 실제 데이터로 확정 예정: |pelvis_y - floor_y| / L_trunk_ref
   descent_min_dt_s: 0.15          # [추가] 하강 속도 계산 시 너무 짧은 시간 간격 제외 (잡음 방지)
 
+# [추가] 관절 좌표 떨림 보정 (견고성)
+smoothing:
+  keypoint_alpha: 0.6             # 임시값: 새 프레임 비중 (1.0 = 보정 없음, 작을수록 부드럽지만 늦게 따라감)
+  floor_estimate_window_s: 2.0    # 한 번도 서 있지 않은 사람(처음부터 누운 사람 등)은 이 시간 동안 가장 낮은 관절점을 바닥으로 추정
+
+# [추가] 세부 자세 분류 (docs/POSTURE_FRAMEWORK.md). 높이 = 바닥 기준선 위 높이 / 몸통 길이. 전부 임시값, 실제 데이터로 확정 예정
+posture:
+  min_hold_s: 0.4                 # 새 자세가 이 시간 이상 이어져야 자세 이름이 바뀜 (깜빡임 방지)
+  near_floor: 0.35                # 지지 분절이 '바닥 근처' (손목이 바닥 근처 = 손바닥 지지의 근사)
+  motion_window_s: 1.0            # 보행·기기 판단용 골반 이동 속도 계산 구간
+  # 누운 계열
+  lying_pelvis_max: 0.5           # 골반 높이 이하
+  lying_shoulder_max: 0.45        # 어깨 높이 이하
+  side_stack_min: 0.15            # 측와위: 양 어깨 세로 차이 이상 (위아래로 겹침)
+  side_width_max: 0.35            # 측와위: 양 어깨 가로 거리 이하
+  fetal_knee_chest_max: 0.9       # 태아 자세: 무릎 중점-어깨 중점 거리 이하
+  fetal_knee_angle_max: 110       # 태아 자세: 무릎 내각 이하 (굴곡)
+  # 팔꿈치 지지
+  elbow_shoulder_min: 0.4         # 어깨가 이 높이 이상 들림
+  elbow_tilt_min_deg: 25          # 체간 기울기 범위 (상체가 반쯤 들림)
+  elbow_tilt_max_deg: 75
+  elbow_under_shoulder_max: 0.5   # 팔꿈치가 어깨 바로 아래 (가로 거리)
+  # 네발 계열
+  quad_tilt_min_deg: 45           # 체간이 수평에 가까움
+  crawl_speed_min: 0.15           # 기기: 골반 이동 속도 (몸통 길이/초)
+  # 바닥 앉기
+  sit_floor_pelvis_max: 0.4       # 골반이 바닥 (높이 이하)
+  sit_trunk_max_deg: 45           # 체간이 세워짐
+  knees_up_min: 0.5               # 무릎 세워 앉기: 무릎 높이 이상
+  knees_up_angle_max: 120         # 무릎 세워 앉기·측좌위: 무릎 내각 이하
+  side_sit_knee_shift_min: 0.4    # 측좌위: 두 무릎이 골반 한쪽으로 쏠린 거리
+  cross_knee_spread_min: 2.5      # 책상다리: 무릎 사이 거리 / 고관절 사이 거리
+  cross_ankle_gap_max: 0.35       # 책상다리: 발목 사이 거리
+  cross_hip_width_min: 0.2        # 책상다리: 양 고관절 가로 거리 이상 (정면에서만 판단)
+  long_sit_knee_min_deg: 150      # 장좌위: 무릎 내각 이상 (신전)
+  # 무릎 계열
+  kneel_pelvis_above_knee_min: 0.6  # 무릎 서기: 골반이 바닥 쪽 무릎보다 이만큼 높음 (미만이면 seiza)
+  kneel_trunk_max_deg: 30
+  half_kneel_other_knee_min: 0.6  # 반무릎: 반대쪽 무릎 높이
+  # 의자·기댐
+  reclined_tilt_min_deg: 45       # 기댄 반와위: 체간 기울기 이상
+  reclined_pelvis_max: 1.6        # 기댄 반와위: 골반 높이 이하 (침대·소파 높이)
+  chair_pelvis_knee_max: 0.15     # 의자 앉기: |골반 높이 - 무릎 높이| 이하
+  slumped_tilt_min_deg: 20        # 체간 처짐: 기울기 이상
+  slumped_shoulder_dy_min: 0.25   # 체간 처짐: 양 어깨 높이 차이 이상
+  # 쪼그림·굴곡·기립
+  squat_knee_angle_max: 140       # 쪼그림: 무릎 내각 이하
+  squat_deep_pelvis_max: 0.9      # 깊은 쪼그림: 골반 높이 이하
+  squat_partial_pelvis_max: 1.6   # 부분 쪼그림: 골반 높이 이하 (서 있으면 약 2)
+  flexion_tilt_min_deg: 45        # 체간 전방 굴곡: 기울기 이상
+  flexion_knee_min_deg: 150       # 체간 전방 굴곡·지지 기립: 무릎 내각 이상 (신전)
+  lean_tilt_max_deg: 45           # 지지 기립: 기울기 상한
+  one_leg_lift_min: 0.25          # 단하지 기립: 들린 발목 높이 이상
+  walk_speed_min: 0.3             # 보행: 골반 이동 속도 (몸통 길이/초)
+  # 보행 주기(gait): 양 발목이 번갈아 엇갈림. 카메라가 사람을 따라가거나 카메라 쪽으로 걸어와 골반이 거의 안 움직여도 잡힘
+  gait_window_s: 1.5              # 이 시간 안의 발목 움직임을 봄
+  gait_amp_min: 0.25              # 양 발목 사이 거리(왼-오른)가 이만큼 이상 변해야 함 (몸통 길이 단위)
+  gait_alt_min: 0.06              # 왼발이 앞/오른발이 앞을 가르는 기준 (이보다 작으면 엇갈림으로 세지 않음)
+  gait_min_alternations: 1        # 이 횟수 이상 발이 엇갈리면 보행
+
+# [추가] 낙상 사건이 '감지되지 않은' 평상시의 자세별 위험 판단. 전부 [확인 필요] (임상 판단은 사용자가 확정)
+#   caution_after_s : 이 자세가 이만큼 이어지면 '주의'(POSTURE_CAUTION). null = 자세만으로는 주의 아님
+#   immobile_check_s: 이 자세로 이만큼 무움직임이면 '주의'(CHECK_POSTURE_IMMOBILE). null = 검사 안 함
+#   recovery_stage  : 낙상 후 이 자세에 도달하면 회복 경로 몇 단계인지 (1 눕기 ~ 6 서기). 2 이상이면 SELF_RECOVERABLE(주의)
+#   note            : 터미널 멘트에 쓰는 이유
+# 양하지 기립의 무움직임은 alerts.standing_immobile_check_s (CHECK_STANDING_IMMOBILE)로 따로 판단
+posture_risk:
+  STAND_UPRIGHT:       {caution_after_s: null, immobile_check_s: null, recovery_stage: 6, note: "기준 자세"}
+  STAND_ONE_LEG:       {caution_after_s: 3.0,  immobile_check_s: null, recovery_stage: 6, note: "단하지 기립: 균형 위험 관찰"}
+  STAND_LEAN_SUPPORT:  {caution_after_s: null, immobile_check_s: 30.0, recovery_stage: 6, note: "지지 기립"}
+  WALKING:             {caution_after_s: null, immobile_check_s: null, recovery_stage: 6, note: "보행"}
+  FORWARD_FLEXION:     {caution_after_s: null, immobile_check_s: 30.0, recovery_stage: 6, note: "조절된 자세(줍기 등)"}
+  SQUAT_PARTIAL:       {caution_after_s: null, immobile_check_s: 30.0, recovery_stage: 5, note: "조절된 하강"}
+  SQUAT_DEEP:          {caution_after_s: null, immobile_check_s: 30.0, recovery_stage: 5, note: "조절된 하강"}
+  SIT_CHAIR_UPRIGHT:   {caution_after_s: null, immobile_check_s: null, recovery_stage: 5, note: "정상"}
+  SIT_CHAIR_SLUMPED:   {caution_after_s: 10.0, immobile_check_s: null, recovery_stage: 5, note: "의자에서 체간 처짐: 의식저하 의심 후보"}
+  SIT_FLOOR_LONG:      {caution_after_s: null, immobile_check_s: 30.0, recovery_stage: 3, note: "바닥 앉기"}
+  SIT_FLOOR_CROSS:     {caution_after_s: null, immobile_check_s: 30.0, recovery_stage: 3, note: "바닥 앉기"}
+  SIT_FLOOR_SIDE:      {caution_after_s: null, immobile_check_s: 30.0, recovery_stage: 3, note: "측좌위(측와위에서 일어나는 경로)"}
+  SIT_FLOOR_KNEES_UP:  {caution_after_s: null, immobile_check_s: 30.0, recovery_stage: 3, note: "바닥 앉기(낙상 후 휴식 가능)"}
+  SIT_FLOOR:           {caution_after_s: null, immobile_check_s: 30.0, recovery_stage: 3, note: "바닥 앉기"}
+  SIT_HEEL:            {caution_after_s: null, immobile_check_s: 30.0, recovery_stage: 5, note: "뒤꿈치 위 앉기"}
+  KNEEL_BILATERAL:     {caution_after_s: null, immobile_check_s: 30.0, recovery_stage: 5, note: "무릎 서기(회복 경로)"}
+  KNEEL_HALF_L:        {caution_after_s: null, immobile_check_s: 30.0, recovery_stage: 5, note: "반무릎 서기(일어서기 직전)"}
+  KNEEL_HALF_R:        {caution_after_s: null, immobile_check_s: 30.0, recovery_stage: 5, note: "반무릎 서기(일어서기 직전)"}
+  QUADRUPED:           {caution_after_s: 3.0,  immobile_check_s: 30.0, recovery_stage: 4, note: "사지 착지: 보지 못한 낙상 후 일어나는 중일 수 있음"}
+  BEAR_POSE:           {caution_after_s: 3.0,  immobile_check_s: 30.0, recovery_stage: 4, note: "손·발 지지: 일어서기 직전일 수 있음"}
+  CRAWLING:            {caution_after_s: 3.0,  immobile_check_s: null, recovery_stage: 4, note: "기기: 바닥에서 이동 중"}
+  LYING_FLAT:          {caution_after_s: 5.0,  immobile_check_s: 30.0, recovery_stage: 1, note: "바닥에 누워 있음: 보지 못한 낙상 가능"}
+  LYING_SIDE_L:        {caution_after_s: 5.0,  immobile_check_s: 30.0, recovery_stage: 1, note: "바닥에 누워 있음: 보지 못한 낙상 가능"}
+  LYING_SIDE_R:        {caution_after_s: 5.0,  immobile_check_s: 30.0, recovery_stage: 1, note: "바닥에 누워 있음: 보지 못한 낙상 가능"}
+  LYING_FETAL:         {caution_after_s: 3.0,  immobile_check_s: 30.0, recovery_stage: 1, note: "태아 자세: 통증·위험 신호 후보"}
+  PRONE_ON_ELBOWS:     {caution_after_s: 5.0,  immobile_check_s: 30.0, recovery_stage: 2, note: "팔꿈치 지지: 바닥에서 일어나는 중일 수 있음"}
+  SIDE_LYING_ON_ELBOW: {caution_after_s: 5.0,  immobile_check_s: 30.0, recovery_stage: 2, note: "팔꿈치 지지 측와위: 일어나는 중일 수 있음"}
+  RECLINED_SUPPORTED:  {caution_after_s: null, immobile_check_s: null, recovery_stage: null, note: "침대·소파에 기댐"}
+  OTHER:               {caution_after_s: null, immobile_check_s: null, recovery_stage: null, note: "분류되지 않은 자세"}
+
 # [추가] 경보 -> 위험 단계 매핑 (SAFE=비위험, CAUTION=주의, DANGER=위험). 터미널 모니터와 /fall_status 에 쓰임
-risk_levels:                      # TBD: 임상적으로 검토해서 확정
+risk_levels:                      # [확인 필요] 임상적으로 검토해서 확정
   NONE: SAFE
   CHECK_STANDING_IMMOBILE: CAUTION          # 기립 30초 무움직임: 확인 요청 (긴급 아님)
-  POST_FALL_MOVING: CAUTION                 # 낙상 후 움직임 있음: 확인 필요
+  POSTURE_CAUTION: CAUTION                  # 평상시 주의 자세 (바닥에 누움, 태아 자세, 네발, 체간 처짐, 단하지 기립)
+  CHECK_POSTURE_IMMOBILE: CAUTION           # 평상시 그 자세로 오래 무움직임 (바닥 앉기·누움 등)
   FALL_EVENT: DANGER                        # 낙상 직후: 아직 움직임 여부를 확인하는 중
+  SELF_RECOVERABLE: CAUTION                 # 낙상 후 스스로 일어나는 경로에 있음 (팔꿈치 지지, 바닥 앉기, 네발, 무릎 서기)
+  POST_FALL_MOVING: CAUTION                 # 낙상 후 움직임 있음: 확인 필요
   EMERGENCY_POST_FALL_IMMOBILE: DANGER      # 낙상 후 30초 무움직임: 긴급
+
+# [추가] 대상자 정보: 화면 비율을 실제 단위(m/s)로 바꿀 때 사용
+subject:
+  trunk_length_m: 0.5             # 임시값 [확인 필요]: 대상자 몸통 길이(m). 줄자로 acromion–greater trochanter를 재서 바꿈
+  location: "거실"                 # 보고서에 들어갈 장소 이름 (핑키마다 바꿈)
+
+# [추가] 낙상 모양 설명 (보고서용). 전부 임시값, 영상·IMU로 확정 예정
+fall_type:
+  descent_start_drop: 0.1         # 하강 시작점: 골반이 가장 높던 곳보다 몸통 길이 × 이 값 이상 내려가기 시작한 시점
+  vertical_ratio_max: 0.5         # 골반 수평 이동 ÷ 수직 하강 ≤ 이 값이면 '수직 낙하' (제자리에서 주저앉듯 넘어짐)
+  slip_down_max_s: 3.0            # Sit Chair·Reclined에서 바닥 자세까지 이 시간 안에 내려오면 '슬립다운' 낙상 [확인 필요]
+  slip_down_min_drop: 0.5         # 슬립다운: 골반이 최소 몸통 길이 × 이 값 이상 내려와야 함
+
+# [추가] 응급 대응 순서 (낙상 후). [확인 필요] 시간과 순서는 임상·운영 기준으로 확정
+response:
+  ask_on: EMERGENCY               # 이 경보가 되면 음성으로 질문 (EMERGENCY = 낙상 후 30초 무움직임)
+  response_window_s: 10.0         # 질문 후 움직임을 기다리는 시간
+  report_delay_s: 10.0            # "10초 후 보고" 안내 후 실제 보고까지의 시간
+  reask_immobile_s: 30.0          # 질문에 반응한 뒤 다시 이만큼 움직임이 없으면 다시 질문
+  lost_notice_s: 5.0              # 낙상 후 사람이 화면에서 이만큼 사라지면 관제에 알림
+
+# [추가] 핑키가 말할 문구. {delay} 자리에 report_delay_s 숫자가 들어감. 빈 문자열("")이면 말하지 않음
+voice:
+  on_fall: ""                                                     # 낙상 순간 (지금은 끔)
+  ask: "응급상황으로 판단됩니다. 움직이실 수 있으십니까?"
+  responded: "움직임이 확인되었습니다. 보호자에게 알리고 계속 지켜보겠습니다."
+  announce: "{delay}초 후 보호자 및 관제통신센터에 현재 상황을 보고하겠습니다."
+  reported: "보호자와 관제통신센터에 보고했습니다. 도움이 올 때까지 무리하게 움직이지 마세요."
+  recovered: "일어나신 것이 확인되었습니다. 불편한 곳이 있으면 보호자에게 알려 주세요."
+
+# [추가] 목소리 바꾸기 (PC 스피커와 핑키 스피커 모두 적용)
+#   미리 들어 보기: python3 tools/voice_preview.py --all        목소리 목록: python3 tools/voice_preview.py --list
+voice_style:
+  voice_name: ""                  # 목소리 종류. 비우면 기본 한국어. 예: "Korean+Alicia", "Korean+Andrea"
+  rate: -20                       # 빠르기 (-100 느림 ~ 100 빠름)
+  pitch: 0                        # 높이 (-100 낮음 ~ 100 높음)
+  volume: 0                       # 크기 (-100 ~ 100)
+  audio_dir: "~/fall_voice"       # 직접 녹음한 파일 폴더. ask.wav, announce.wav ... 가 있으면 기계음 대신 재생
+                                  # 녹음: python3 tools/voice_preview.py --record ask   (핑키는 ~/fall_voice 에 같은 파일을 복사)
